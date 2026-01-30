@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>My Components — uiVault</title>
+    <link rel="icon" type="image/png" href="/assets/heart-outline.png">
+
+    <link rel="stylesheet" href="style.css" />
+    <link rel="stylesheet" href="my-comps.css" />
+  </head>
+  <body>
+    <header class="header">
+      <div class="container header-inner">
+        <div class="logo">uiVault Admin</div>
+        <button id="logoutBtn" class="admin-btn">Logout</button>
+      </div>
+    </header>
+
+    <main class="components">
+      <div class="container">
+        <h2 class="section-title">My Components</h2>
+        <div class="component-grid" id="componentGrid"></div>
+      </div>
+    </main>
+
+    <!-- EDIT MODAL -->
+    <div class="modal hidden" id="editModal">
+      <div class="modal-box">
+        <h3>Edit Component</h3>
+
+        <input id="editName" placeholder="Name" />
+        <input id="editPrice" type="number" placeholder="Price" />
+
+        <textarea id="editHTML" placeholder="HTML"></textarea>
+        <textarea id="editCSS" placeholder="CSS"></textarea>
+        <textarea id="editJS" placeholder="JS"></textarea>
+
+        <div class="modal-actions">
+          <button id="saveEdit" class="btn primary">Save</button>
+          <button id="closeEdit" class="btn">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- DELETE MODAL -->
+    <div class="modal hidden" id="deleteModal">
+      <div class="modal-box">
+        <h3>Delete Component?</h3>
+        <p>This action cannot be undone.</p>
+
+        <div class="modal-actions">
+          <button id="confirmDelete" class="btn danger">Delete</button>
+          <button id="cancelDelete" class="btn">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="my-comps.js"></script>
+  </body>
+</html>

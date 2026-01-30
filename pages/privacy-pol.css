@@ -1,0 +1,146 @@
+:root {
+  --bg: #0e0e11;
+  --card: #16161d;
+  --text: #eaeaf0;
+  --muted: #9a9aa6;
+  --accent: #6cf2c2;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Inter", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.privacy-wrap {
+  max-width: 900px;
+  margin: auto;
+  padding: 32px 18px 80px;
+}
+
+.hero {
+  text-align: center;
+  margin-bottom: 48px;
+}
+
+.hero h1 {
+  font-size: 2.2rem;
+  margin-bottom: 12px;
+}
+
+.hero p {
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.block {
+  background: var(--card);
+  padding: 26px 22px;
+  border-radius: 18px;
+  margin-bottom: 22px;
+}
+
+.block h2 {
+  font-size: 1.2rem;
+  margin-bottom: 10px;
+}
+
+.block p,
+.block li {
+  color: var(--muted);
+  line-height: 1.7;
+  font-size: 0.95rem;
+}
+
+.block ul {
+  padding-left: 18px;
+}
+
+.contact {
+  text-align: center;
+  margin-top: 50px;
+}
+
+/* Animation Base */
+.reveal,
+.reveal-left,
+.reveal-right {
+  opacity: 0;
+  transform: translateY(30px);
+  transition: all 0.8s ease;
+}
+
+.reveal-left {
+  transform: translateX(-40px);
+}
+
+.reveal-right {
+  transform: translateX(40px);
+}
+
+.reveal.show,
+.reveal-left.show,
+.reveal-right.show {
+  opacity: 1;
+  transform: translate(0);
+}
+
+@media (min-width: 768px) {
+  .hero h1 {
+    font-size: 2.6rem;
+  }
+}
+
+.lock-div{
+  height: 50px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+/* lock icon */
+/* .lock-link {
+  width: 100px;
+  height: 100px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface);
+  transition: all 0.25s ease;
+} */
+
+.lock-icon {
+  width: 100px;
+  height: 100px;
+  opacity: 0.75;
+  transition: all 0.25s ease;
+}
+
+.lock-link:hover {
+  border-color: var(--accent);
+  background: rgba(79, 70, 229, 0.08);
+}
+
+.lock-link:hover .lock-icon {
+  opacity: 1;
+  transform: scale(1.1);
+}
+
+@media (max-width: 480px) {
+  .lock-link {
+    width: 100px;
+    height: 100px;
+  }
+
+  .lock-icon {
+    width: 100px;
+    height: 100px;
+  }
+}
