@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Admin Login — uiVault</title>
+    <link rel="icon" type="image/png" href="/assets/heart-outline.png">
+    <!-- Font -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+
+    <link rel="stylesheet" href="admin.css" />
+  </head>
+  <body>
+    <div class="login-page">
+      <div class="login-card">
+        <div class="brand">uiVault</div>
+        <h1>Admin Login</h1>
+        <p class="subtitle">Restricted access. Admin only.</p>
+
+        <form id="loginForm" method="post" action="/admin/login">
+          <div class="field">
+            <input type="email" id="email" name="email" required />
+            <label>Email</label>
+          </div>
+
+          <div class="field">
+            <input type="password" id="password" name="password" required />
+            <label>Password</label>
+          </div>
+
+          <button type="submit">Sign in</button>
+        </form>
+
+        <p class="forgot">Forgot password?</p>
+        <p class="error" id="errorMsg"></p>
+      </div>
+    </div>
+
+    <script src="admin.js"></script>
+  </body>
+</html>
