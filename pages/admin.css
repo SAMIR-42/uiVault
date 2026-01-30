@@ -1,0 +1,137 @@
+:root {
+  --bg: #f9fafb;
+  --card: #ffffff;
+  --text: #0f172a;
+  --muted: #64748b;
+  --border: #e5e7eb;
+  --accent: #4f46e5;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: "Inter", system-ui, sans-serif;
+  background: linear-gradient(180deg, #f9fafb, #eef2ff);
+  color: var(--text);
+}
+
+.login-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.login-card {
+  width: 100%;
+  max-width: 380px;
+  background: var(--card);
+  border-radius: 18px;
+  padding: 2.2rem 2rem;
+  border: 1px solid var(--border);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.06);
+}
+
+.brand {
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--accent);
+  margin-bottom: 0.6rem;
+}
+
+h1 {
+  font-size: 1.4rem;
+  margin-bottom: 0.3rem;
+}
+
+.subtitle {
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin-bottom: 1.6rem;
+}
+
+/* floating inputs */
+.field {
+  position: relative;
+  margin-bottom: 1.1rem;
+}
+
+.field input {
+  width: 100%;
+  padding: 0.8rem 0.75rem;
+  font-size: 0.9rem;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  outline: none;
+  background: transparent;
+}
+
+.field label {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.75rem;
+  color: var(--muted);
+  pointer-events: none;
+  transition: 0.2s ease;
+  background: white;
+  padding: 0 4px;
+}
+
+.field input:focus {
+  border-color: var(--accent);
+}
+
+.field input:focus + label,
+.field input:not(:placeholder-shown) + label {
+  top: -6px;
+  font-size: 0.65rem;
+  color: var(--accent);
+}
+
+/* button */
+button {
+  width: 100%;
+  padding: 0.75rem;
+  border-radius: 12px;
+  border: none;
+  background: var(--accent);
+  color: white;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  margin-top: 0.4rem;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 20px rgba(79, 70, 229, 0.25);
+}
+
+.forgot {
+  margin-top: 1rem;
+  font-size: 0.7rem;
+  color: var(--muted);
+  text-align: center;
+}
+
+.error {
+  margin-top: 0.6rem;
+  font-size: 0.75rem;
+  color: #dc2626;
+  text-align: center;
+}
+
+/* desktop polish */
+@media (min-width: 768px) {
+  .login-card {
+    padding: 2.5rem 2.3rem;
+  }
+}

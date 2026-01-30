@@ -1,0 +1,57 @@
+.modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 999;
+}
+
+.modal-box {
+  background: black;
+  width: 95%;
+  max-width: 600px;
+  padding: 20px;
+  border-radius: 12px;
+  color: whitesmoke;
+}
+
+.modal-box input,
+.modal-box textarea {
+  width: 100%;
+  margin: 8px 0;
+  padding: 10px;
+  background: #000;
+  color: whitesmoke;
+  border: 1px solid #333;
+  border-radius: 8px;
+}
+
+.modal-box textarea {
+  height: 100px;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.hidden {
+  display: none;
+}
+
+.btn.primary {
+  background: #2563eb;
+}
+.btn.danger {
+  background: #dc2626;
+}
+.components{
+  padding-top: 80px;
+}
+.component-grid{
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+}
