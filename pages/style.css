@@ -675,3 +675,7 @@ body {
   border-radius:6px;
   text-decoration:none;
 }
+
+a{
+  text-decoration: none;
+}
