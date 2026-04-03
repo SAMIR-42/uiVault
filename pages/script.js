@@ -54,7 +54,6 @@ function renderComponents(list) {
     <!DOCTYPE html>
     <html>
     <head>
-   
     <script src="https://unpkg.com/lucide@latest"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
       <style>
