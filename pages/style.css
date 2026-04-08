@@ -509,10 +509,16 @@ body {
   overflow-x: auto;
   padding-bottom: 6px;
   scrollbar-width: none;
+  cursor: grab;
 }
 
 .category-scroll::-webkit-scrollbar {
   display: none;
+}
+
+.category-scroll.dragging {
+  cursor: grabbing;
+  user-select: none;
 }
 
 .cat-btn {

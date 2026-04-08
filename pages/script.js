@@ -333,6 +333,53 @@ function cleanupPaymentQueryParams() {
   window.history.replaceState({}, "", url.toString());
 }
 
+function enableCategoryMouseScroll() {
+  const scroller = document.getElementById("categoryScroll");
+  if (!scroller || scroller.dataset.mouseScrollEnabled === "1") return;
+
+  scroller.dataset.mouseScrollEnabled = "1";
+
+  // Mouse wheel: vertical wheel -> horizontal scroll
+  scroller.addEventListener(
+    "wheel",
+    (e) => {
+      if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+        scroller.scrollLeft += e.deltaY;
+        e.preventDefault();
+      }
+    },
+    { passive: false }
+  );
+
+  // Click + drag support for desktop users
+  let isDragging = false;
+  let startX = 0;
+  let startScrollLeft = 0;
+
+  scroller.addEventListener("mousedown", (e) => {
+    isDragging = true;
+    startX = e.pageX;
+    startScrollLeft = scroller.scrollLeft;
+    scroller.classList.add("dragging");
+  });
+
+  window.addEventListener("mouseup", () => {
+    isDragging = false;
+    scroller.classList.remove("dragging");
+  });
+
+  scroller.addEventListener("mouseleave", () => {
+    isDragging = false;
+    scroller.classList.remove("dragging");
+  });
+
+  scroller.addEventListener("mousemove", (e) => {
+    if (!isDragging) return;
+    const walk = e.pageX - startX;
+    scroller.scrollLeft = startScrollLeft - walk;
+  });
+}
+
 /* =======================
    STATS COUNTER
 ======================= */
@@ -371,6 +418,8 @@ document.querySelectorAll(".cat-btn").forEach((btn) => {
     setCategory(btn.dataset.category);
   });
 });
+
+enableCategoryMouseScroll();
 
 function setCategory(category) {
   currentCategory = category;
