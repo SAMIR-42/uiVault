@@ -300,6 +300,66 @@ router.get("/public/components/:id/code", async (req, res) => {
   }
 });
 
+router.get("/public/components/:id/preview", async (req, res) => {
+  try {
+    const rows = await dbQuery(
+      `
+      SELECT html_code, css_code, js_code
+      FROM components
+      WHERE id = ?
+      LIMIT 1
+      `,
+      [req.params.id]
+    );
+
+    if (!rows.length) {
+      return res.status(404).send("Component not found");
+    }
+
+    const html = rows[0].html_code || "";
+    const css = rows[0].css_code || "";
+    const js = rows[0].js_code || "";
+
+    const page = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+    }
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+    ${css}
+  </style>
+</head>
+<body>
+  ${html}
+  <script>
+    ${js}
+    if (window.lucide) {
+      lucide.createIcons();
+    }
+  <\/script>
+</body>
+</html>`;
+
+    res.set("Cache-Control", "public, max-age=3600");
+    res.type("html").send(page);
+  } catch (err) {
+    res.status(500).send("Preview load failed");
+  }
+});
+
 router.post("/public/create-order", async (req, res) => {
   try {
     await ensurePaymentTables();

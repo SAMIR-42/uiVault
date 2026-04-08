@@ -5,6 +5,7 @@ let ALL_COMPONENTS = [];
 let currentCategory = "All";
 const CODE_CACHE = new Map();
 const CARD_REGISTRY = new Map();
+let previewObserver = null;
 
 const cashfree = window.Cashfree ? window.Cashfree({ mode: "production" }) : null;
 
@@ -56,45 +57,13 @@ function renderComponents(list) {
     const card = document.createElement("div");
     card.className = "component-card";
 
-    const iframeHTML = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-    <script src="https://unpkg.com/lucide@latest"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-      <style>
-        html, body {
-          width: 100%;
-          height: 100%;
-          margin: 0;
-        }
-        body {
-          display: flex;
-          align-items: center;
-          justify-content: center;
-        }
-        ${comp.css_code || ""}
-      </style>
-    </head>
-    <body>
-      ${comp.html_code || ""}
-      <script>
-        ${comp.js_code || ""}
-        if (window.lucide) {
-          lucide.createIcons();
-        }
-      <\/script>
-    </body>
-    </html>
-    `;
-
     card.innerHTML = `
       <div class="preview-box">
         <iframe
           class="component-preview"
           sandbox="allow-scripts"
           loading="lazy"
-          srcdoc="${iframeHTML.replace(/"/g, "&quot;")}"
+          data-preview-url="/admin/public/components/${comp.id}/preview"
         ></iframe>
         <div class="preview-loader">
           <div class="line-loader">
@@ -139,6 +108,10 @@ function renderComponents(list) {
     const loader = card.querySelector(".preview-loader");
 
     iframe.addEventListener("load", () => {
+      loader.style.display = "none";
+    });
+
+    iframe.addEventListener("error", () => {
       loader.style.display = "none";
     });
 
@@ -211,6 +184,38 @@ function renderComponents(list) {
 
     grid.appendChild(card);
     lucide.createIcons();
+  });
+
+  setupPreviewLazyLoader();
+}
+
+function setupPreviewLazyLoader() {
+  if (!previewObserver) {
+    previewObserver = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting) return;
+          const iframe = entry.target;
+          const src = iframe.dataset.previewUrl;
+          if (src && !iframe.dataset.loaded) {
+            iframe.src = src;
+            iframe.dataset.loaded = "1";
+          }
+          previewObserver.unobserve(iframe);
+        });
+      },
+      {
+        root: null,
+        rootMargin: "300px 0px",
+        threshold: 0.01,
+      }
+    );
+  }
+
+  document.querySelectorAll(".component-preview").forEach((iframe) => {
+    if (!iframe.dataset.loaded) {
+      previewObserver.observe(iframe);
+    }
   });
 }
 
