@@ -25,6 +25,21 @@ function getBaseUrl(req) {
   );
 }
 
+function getCashfreeCredentials() {
+  const clientId = (
+    process.env.CASHFREE_CLIENT_ID ||
+    process.env.CASHFREE_APP_ID ||
+    ""
+  ).trim();
+  const clientSecret = (
+    process.env.CASHFREE_CLIENT_SECRET ||
+    process.env.CASHFREE_SECRET_KEY ||
+    ""
+  ).trim();
+
+  return { clientId, clientSecret };
+}
+
 function getOrCreateGuestId(req, res) {
   const existing = req.cookies?.uiv_guest_id;
   if (existing) return existing;
@@ -42,7 +57,7 @@ function getOrCreateGuestId(req, res) {
 function verifyCashfreeWebhookSignature(req) {
   const timestamp = req.headers["x-webhook-timestamp"];
   const signature = req.headers["x-webhook-signature"];
-  const secret = process.env.CASHFREE_CLIENT_SECRET;
+  const { clientSecret: secret } = getCashfreeCredentials();
   const rawBody = req.rawBody || "";
 
   if (!timestamp || !signature || !secret || !rawBody) return false;
@@ -62,8 +77,7 @@ function verifyCashfreeWebhookSignature(req) {
 }
 
 async function fetchCashfreeOrderPayments(orderId) {
-  const clientId = process.env.CASHFREE_CLIENT_ID;
-  const clientSecret = process.env.CASHFREE_CLIENT_SECRET;
+  const { clientId, clientSecret } = getCashfreeCredentials();
   if (!clientId || !clientSecret) return [];
 
   const url = `https://api.cashfree.com/pg/orders/${encodeURIComponent(orderId)}/payments`;
@@ -304,8 +318,7 @@ router.post("/public/create-order", async (req, res) => {
       return res.status(404).json({ error: "Component not found" });
     }
 
-    const clientId = process.env.CASHFREE_CLIENT_ID;
-    const clientSecret = process.env.CASHFREE_CLIENT_SECRET;
+    const { clientId, clientSecret } = getCashfreeCredentials();
     if (!clientId || !clientSecret) {
       return res.status(500).json({ error: "Cashfree keys missing" });
     }
