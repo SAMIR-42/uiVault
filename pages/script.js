@@ -10,6 +10,7 @@ const previewLoadQueue = [];
 let activePreviewLoads = 0;
 const MAX_ACTIVE_PREVIEW_LOADS = 1;
 const MIN_LOADER_VISIBLE_MS = 320;
+const PREVIEW_RETRY_LIMIT = 2;
 
 const cashfree = window.Cashfree ? window.Cashfree({ mode: "production" }) : null;
 
@@ -215,17 +216,28 @@ function setupPreviewLazyLoader() {
       },
       {
         root: null,
-        rootMargin: "0px 0px",
-        threshold: 0.25,
+        rootMargin: "120px 0px",
+        threshold: 0.01,
       }
     );
   }
 
-  document.querySelectorAll(".component-preview").forEach((iframe) => {
+  const iframes = [...document.querySelectorAll(".component-preview")];
+  iframes.forEach((iframe) => {
     if (!iframe.dataset.loaded) {
       previewObserver.observe(iframe);
     }
   });
+
+  // Initial viewport cards should load immediately.
+  const immediateCount = window.innerWidth <= 768 ? 1 : 4;
+  iframes.slice(0, immediateCount).forEach((iframe) => {
+    if (!iframe.dataset.queued && !iframe.dataset.loaded) {
+      iframe.dataset.queued = "1";
+      previewLoadQueue.push(iframe);
+    }
+  });
+  processPreviewLoadQueue();
 }
 
 function processPreviewLoadQueue() {
@@ -246,17 +258,34 @@ function processPreviewLoadQueue() {
 }
 
 function completePreviewLoad(iframe, loader, didLoad) {
-  if (iframe.dataset.completed === "1") return;
-  iframe.dataset.completed = "1";
-  iframe.dataset.loaded = didLoad ? "1" : "";
-
   const startedAt = Number(iframe.dataset.loadStartedAt || Date.now());
   const elapsed = Date.now() - startedAt;
   const wait = Math.max(0, MIN_LOADER_VISIBLE_MS - elapsed);
 
   setTimeout(() => {
-    loader.style.display = "none";
-    if (didLoad) iframe.classList.add("ready");
+    if (didLoad) {
+      loader.style.display = "none";
+      iframe.dataset.loaded = "1";
+      iframe.classList.add("ready");
+    } else {
+      const retries = Number(iframe.dataset.retries || "0");
+      if (retries < PREVIEW_RETRY_LIMIT) {
+        iframe.dataset.retries = String(retries + 1);
+        iframe.dataset.queued = "";
+        iframe.dataset.loaded = "";
+        // keep loader visible and retry again shortly
+        setTimeout(() => {
+          if (!iframe.dataset.queued && !iframe.dataset.loaded) {
+            iframe.dataset.queued = "1";
+            previewLoadQueue.push(iframe);
+            processPreviewLoadQueue();
+          }
+        }, 250);
+      } else {
+        loader.innerHTML = `<div class="preview-placeholder">Preview unavailable</div>`;
+      }
+    }
+
     activePreviewLoads = Math.max(0, activePreviewLoads - 1);
     processPreviewLoadQueue();
   }, wait);
