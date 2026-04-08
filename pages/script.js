@@ -5,12 +5,12 @@ let ALL_COMPONENTS = [];
 let currentCategory = "All";
 const CODE_CACHE = new Map();
 const CARD_REGISTRY = new Map();
-let previewObserver = null;
-const previewLoadQueue = [];
-let activePreviewLoads = 0;
-const MAX_ACTIVE_PREVIEW_LOADS = 1;
-const MIN_LOADER_VISIBLE_MS = 320;
-const PREVIEW_RETRY_LIMIT = 2;
+let RENDER_SOURCE = [];
+let renderedCount = 0;
+let listLoading = false;
+let loadMoreObserver = null;
+const BATCH_SIZE = 10;
+const MIN_LOADER_VISIBLE_MS = 250;
 
 const cashfree = window.Cashfree ? window.Cashfree({ mode: "production" }) : null;
 
@@ -43,6 +43,14 @@ fetch("/admin/public/components")
 function renderComponents(list) {
   grid.innerHTML = "";
   CARD_REGISTRY.clear();
+  RENDER_SOURCE = list;
+  renderedCount = 0;
+  listLoading = false;
+
+  if (loadMoreObserver) {
+    loadMoreObserver.disconnect();
+    loadMoreObserver = null;
+  }
 
   if (list.length === 0) {
     grid.innerHTML = `
@@ -58,7 +66,18 @@ function renderComponents(list) {
     return;
   }
 
-  list.forEach((comp) => {
+  renderNextBatch();
+  setupLoadMoreObserver();
+}
+
+function renderNextBatch() {
+  if (listLoading) return;
+  if (renderedCount >= RENDER_SOURCE.length) return;
+  listLoading = true;
+
+  const end = Math.min(renderedCount + BATCH_SIZE, RENDER_SOURCE.length);
+  for (let i = renderedCount; i < end; i += 1) {
+    const comp = RENDER_SOURCE[i];
     const card = document.createElement("div");
     card.className = "component-card";
 
@@ -68,7 +87,7 @@ function renderComponents(list) {
           class="component-preview"
           sandbox="allow-scripts"
           loading="lazy"
-          data-preview-url="/admin/public/components/${comp.id}/preview"
+          src="/admin/public/components/${comp.id}/preview"
         ></iframe>
         <div class="preview-loader">
           <div class="line-loader">
@@ -112,13 +131,18 @@ function renderComponents(list) {
     const iframe = card.querySelector("iframe");
     const loader = card.querySelector(".preview-loader");
     loader.style.display = "flex";
+    const loadStartedAt = Date.now();
 
     iframe.addEventListener("load", () => {
-      completePreviewLoad(iframe, loader, true);
+      const elapsed = Date.now() - loadStartedAt;
+      const wait = Math.max(0, MIN_LOADER_VISIBLE_MS - elapsed);
+      setTimeout(() => {
+        loader.style.display = "none";
+      }, wait);
     });
 
     iframe.addEventListener("error", () => {
-      completePreviewLoad(iframe, loader, false);
+      loader.innerHTML = `<div class="preview-placeholder">Preview unavailable</div>`;
     });
 
     const unlockBtn = card.querySelector(".unlock-btn");
@@ -190,105 +214,33 @@ function renderComponents(list) {
 
     grid.appendChild(card);
     lucide.createIcons();
-  });
-
-  setupPreviewLazyLoader();
-}
-
-function setupPreviewLazyLoader() {
-  previewLoadQueue.length = 0;
-  activePreviewLoads = 0;
-
-  if (!previewObserver) {
-    previewObserver = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (!entry.isIntersecting) return;
-          const iframe = entry.target;
-          const src = iframe.dataset.previewUrl;
-          if (src && !iframe.dataset.queued && !iframe.dataset.loaded) {
-            iframe.dataset.queued = "1";
-            previewLoadQueue.push(iframe);
-            processPreviewLoadQueue();
-          }
-          previewObserver.unobserve(iframe);
-        });
-      },
-      {
-        root: null,
-        rootMargin: "120px 0px",
-        threshold: 0.01,
-      }
-    );
   }
-
-  const iframes = [...document.querySelectorAll(".component-preview")];
-  iframes.forEach((iframe) => {
-    if (!iframe.dataset.loaded) {
-      previewObserver.observe(iframe);
-    }
-  });
-
-  // Initial viewport cards should load immediately.
-  const immediateCount = window.innerWidth <= 768 ? 1 : 4;
-  iframes.slice(0, immediateCount).forEach((iframe) => {
-    if (!iframe.dataset.queued && !iframe.dataset.loaded) {
-      iframe.dataset.queued = "1";
-      previewLoadQueue.push(iframe);
-    }
-  });
-  processPreviewLoadQueue();
+  renderedCount = end;
+  listLoading = false;
 }
 
-function processPreviewLoadQueue() {
-  while (
-    activePreviewLoads < MAX_ACTIVE_PREVIEW_LOADS &&
-    previewLoadQueue.length > 0
-  ) {
-    const iframe = previewLoadQueue.shift();
-    if (!iframe || iframe.dataset.loaded) continue;
+function setupLoadMoreObserver() {
+  const sentinel = document.createElement("div");
+  sentinel.id = "componentLoadSentinel";
+  sentinel.style.height = "1px";
+  grid.appendChild(sentinel);
 
-    const src = iframe.dataset.previewUrl;
-    if (!src) continue;
-
-    activePreviewLoads += 1;
-    iframe.dataset.loadStartedAt = String(Date.now());
-    iframe.src = src;
-  }
-}
-
-function completePreviewLoad(iframe, loader, didLoad) {
-  const startedAt = Number(iframe.dataset.loadStartedAt || Date.now());
-  const elapsed = Date.now() - startedAt;
-  const wait = Math.max(0, MIN_LOADER_VISIBLE_MS - elapsed);
-
-  setTimeout(() => {
-    if (didLoad) {
-      loader.style.display = "none";
-      iframe.dataset.loaded = "1";
-      iframe.classList.add("ready");
-    } else {
-      const retries = Number(iframe.dataset.retries || "0");
-      if (retries < PREVIEW_RETRY_LIMIT) {
-        iframe.dataset.retries = String(retries + 1);
-        iframe.dataset.queued = "";
-        iframe.dataset.loaded = "";
-        // keep loader visible and retry again shortly
-        setTimeout(() => {
-          if (!iframe.dataset.queued && !iframe.dataset.loaded) {
-            iframe.dataset.queued = "1";
-            previewLoadQueue.push(iframe);
-            processPreviewLoadQueue();
-          }
-        }, 250);
-      } else {
-        loader.innerHTML = `<div class="preview-placeholder">Preview unavailable</div>`;
-      }
+  loadMoreObserver = new IntersectionObserver(
+    (entries) => {
+      const [entry] = entries;
+      if (!entry?.isIntersecting) return;
+      if (renderedCount >= RENDER_SOURCE.length) return;
+      renderNextBatch();
+      grid.appendChild(sentinel);
+    },
+    {
+      root: null,
+      rootMargin: "200px 0px",
+      threshold: 0,
     }
+  );
 
-    activePreviewLoads = Math.max(0, activePreviewLoads - 1);
-    processPreviewLoadQueue();
-  }, wait);
+  loadMoreObserver.observe(sentinel);
 }
 
 async function fetchComponentCode(componentId) {
