@@ -1,6 +1,7 @@
 require("dotenv").config();
 const express = require("express");
 const session = require("express-session");
+const cookieParser = require("cookie-parser");
 const path = require("path");
 
 const app = express();
@@ -12,9 +13,16 @@ const adminRoutes = require("./routes/admin");
 app.use(express.static(path.join(__dirname, "pages")));
 app.use("/assets", express.static(path.join(__dirname, "assets")));
 
-// Body parser
-app.use(express.json());
+// Body parser (+ raw body capture for Cashfree webhook signature verification)
+app.use(
+  express.json({
+    verify: (req, res, buf) => {
+      req.rawBody = buf.toString();
+    },
+  })
+);
 app.use(express.urlencoded({ extended: true }));
+app.use(cookieParser());
 
 // Session
 app.use(

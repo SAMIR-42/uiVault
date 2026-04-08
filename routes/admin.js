@@ -1,9 +1,104 @@
 const express = require("express");
 const bcrypt = require("bcrypt");
+const crypto = require("crypto");
 const db = require("../db");
 
 const router = express.Router();
 console.log("admin routes file loaded");
+
+const FIXED_COMPONENT_PRICE = 1;
+const UNLOCK_DURATION_HOURS = 1;
+
+function dbQuery(query, params = []) {
+  return new Promise((resolve, reject) => {
+    db.query(query, params, (err, results) => {
+      if (err) return reject(err);
+      resolve(results);
+    });
+  });
+}
+
+function getBaseUrl(req) {
+  return (
+    process.env.APP_BASE_URL ||
+    `${req.protocol}://${req.get("host")}`
+  );
+}
+
+function getOrCreateGuestId(req, res) {
+  const existing = req.cookies?.uiv_guest_id;
+  if (existing) return existing;
+
+  const guestId = crypto.randomUUID();
+  res.cookie("uiv_guest_id", guestId, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    maxAge: 1000 * 60 * 60 * 24 * 180,
+  });
+  return guestId;
+}
+
+function verifyCashfreeWebhookSignature(req) {
+  const timestamp = req.headers["x-webhook-timestamp"];
+  const signature = req.headers["x-webhook-signature"];
+  const secret = process.env.CASHFREE_CLIENT_SECRET;
+  const rawBody = req.rawBody || "";
+
+  if (!timestamp || !signature || !secret || !rawBody) return false;
+
+  const signedPayload = `${timestamp}${rawBody}`;
+  const generated = crypto
+    .createHmac("sha256", secret)
+    .update(signedPayload)
+    .digest("base64");
+
+  if (generated.length !== String(signature).length) return false;
+
+  return crypto.timingSafeEqual(
+    Buffer.from(generated),
+    Buffer.from(String(signature))
+  );
+}
+
+async function ensurePaymentTables() {
+  await dbQuery(`
+    CREATE TABLE IF NOT EXISTS component_payments (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      order_id VARCHAR(100) UNIQUE NOT NULL,
+      component_id INT NOT NULL,
+      guest_id VARCHAR(100) NOT NULL,
+      amount INT NOT NULL,
+      status ENUM('created', 'paid', 'failed') DEFAULT 'created',
+      cf_payment_id VARCHAR(100),
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    )
+  `);
+
+  await dbQuery(`
+    CREATE TABLE IF NOT EXISTS component_unlocks (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      component_id INT NOT NULL,
+      guest_id VARCHAR(100) NOT NULL,
+      unlock_until DATETIME NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY uniq_guest_component (component_id, guest_id)
+    )
+  `);
+}
+
+async function createUnlockForPayment(paymentRow) {
+  const unlockUntil = new Date(Date.now() + UNLOCK_DURATION_HOURS * 60 * 60 * 1000);
+  await dbQuery(
+    `
+      INSERT INTO component_unlocks (component_id, guest_id, unlock_until)
+      VALUES (?, ?, ?)
+      ON DUPLICATE KEY UPDATE unlock_until = VALUES(unlock_until)
+    `,
+    [paymentRow.component_id, paymentRow.guest_id, unlockUntil]
+  );
+}
 
 router.post("/login", (req, res) => {
   const { email, password } = req.body;
@@ -29,7 +124,6 @@ router.post("/login", (req, res) => {
       return res.status(401).json({ error: "Invalid email or password" });
     }
 
-    // session set
     req.session.admin = {
       id: admin.id,
       email: admin.email,
@@ -40,7 +134,6 @@ router.post("/login", (req, res) => {
   });
 });
 
-//session check routrouter.get("/me", (req, res) => {
 router.get("/me", (req, res) => {
   if (!req.session.admin) {
     return res.status(401).json({ error: "Unauthorized" });
@@ -48,14 +141,12 @@ router.get("/me", (req, res) => {
   res.json({ admin: req.session.admin });
 });
 
-//logout rout
-
 router.get("/logout", (req, res) => {
   req.session.destroy(() => {
     res.json({ success: true });
   });
 });
-//session check, categories db se, clean json return
+
 router.get("/categories", (req, res) => {
   if (!req.session.admin) {
     return res.status(401).json({ error: "Unauthorized" });
@@ -69,15 +160,16 @@ router.get("/categories", (req, res) => {
     res.json(results);
   });
 });
-//db me components save krne
+
+// Admin insert: price fixed to 1 on backend
 router.post("/components", (req, res) => {
   if (!req.session.admin) {
     return res.status(401).json({ error: "Unauthorized" });
   }
 
-  const { name, category_id, price, html, css, js } = req.body;
+  const { name, category_id, html, css, js } = req.body;
 
-  if (!name || !category_id || price === undefined || !html || !css) {
+  if (!name || !category_id || !html || !css) {
     return res.status(400).json({ error: "Missing required fields" });
   }
 
@@ -86,55 +178,285 @@ router.post("/components", (req, res) => {
     (name, category_id, price, html_code, css_code, js_code)
     VALUES (?, ?, ?, ?, ?, ?)
   `;
-  db.query(query, [name, category_id, price, html, css, js || ""], (err) => {
-    if (err) {
-      return res.status(500).json({ error: "DB insert failed" });
+  db.query(
+    query,
+    [name, category_id, FIXED_COMPONENT_PRICE, html, css, js || ""],
+    (err) => {
+      if (err) {
+        return res.status(500).json({ error: "DB insert failed" });
+      }
+      res.json({ success: true });
     }
-    res.json({ success: true });
-  });
+  );
 });
 
-//backend component fetch
-router.get("/public/components", (req, res) => {
-  const query = `
-    SELECT c.id, c.name, c.price, cat.name AS category,
-           c.html_code, c.css_code, c.js_code
-    FROM components c
-    JOIN categories cat ON c.category_id = cat.id
-    ORDER BY c.created_at DESC
-  `;
+// Public component listing: NEVER expose code directly
+router.get("/public/components", async (req, res) => {
+  try {
+    await ensurePaymentTables();
+    const guestId = getOrCreateGuestId(req, res);
 
-  db.query(query, (err, results) => {
-    if (err) {
-      return res.status(500).json({ error: "DB error" });
-    }
+    const query = `
+      SELECT
+        c.id,
+        c.name,
+        ? AS price,
+        cat.name AS category,
+        CASE
+          WHEN u.unlock_until IS NOT NULL AND u.unlock_until > NOW() THEN 1
+          ELSE 0
+        END AS is_unlocked
+      FROM components c
+      JOIN categories cat ON c.category_id = cat.id
+      LEFT JOIN component_unlocks u
+        ON u.component_id = c.id
+       AND u.guest_id = ?
+      ORDER BY c.created_at DESC
+    `;
+
+    const results = await dbQuery(query, [FIXED_COMPONENT_PRICE, guestId]);
     res.json(results);
-  });
+  } catch (err) {
+    res.status(500).json({ error: "DB error" });
+  }
 });
 
-// UPDATE COMPONENT
+router.get("/public/components/:id/code", async (req, res) => {
+  try {
+    await ensurePaymentTables();
+    const guestId = getOrCreateGuestId(req, res);
+
+    const unlockRows = await dbQuery(
+      `
+      SELECT unlock_until
+      FROM component_unlocks
+      WHERE component_id = ? AND guest_id = ? AND unlock_until > NOW()
+      LIMIT 1
+      `,
+      [req.params.id, guestId]
+    );
+
+    if (!unlockRows.length) {
+      return res.status(403).json({ error: "Component is locked" });
+    }
+
+    const codeRows = await dbQuery(
+      `
+      SELECT html_code, css_code, js_code
+      FROM components
+      WHERE id = ?
+      LIMIT 1
+      `,
+      [req.params.id]
+    );
+
+    if (!codeRows.length) {
+      return res.status(404).json({ error: "Component not found" });
+    }
+
+    res.json({
+      html_code: codeRows[0].html_code || "",
+      css_code: codeRows[0].css_code || "",
+      js_code: codeRows[0].js_code || "",
+      unlock_until: unlockRows[0].unlock_until,
+    });
+  } catch (err) {
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+router.post("/public/create-order", async (req, res) => {
+  try {
+    await ensurePaymentTables();
+    const guestId = getOrCreateGuestId(req, res);
+    const { componentId } = req.body || {};
+
+    if (!componentId) {
+      return res.status(400).json({ error: "componentId is required" });
+    }
+
+    const componentRows = await dbQuery(
+      "SELECT id FROM components WHERE id = ? LIMIT 1",
+      [componentId]
+    );
+    if (!componentRows.length) {
+      return res.status(404).json({ error: "Component not found" });
+    }
+
+    const clientId = process.env.CASHFREE_CLIENT_ID;
+    const clientSecret = process.env.CASHFREE_CLIENT_SECRET;
+    if (!clientId || !clientSecret) {
+      return res.status(500).json({ error: "Cashfree keys missing" });
+    }
+
+    const orderId = `uiv_${componentId}_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+    const returnUrl = `${getBaseUrl(req)}/?componentId=${componentId}&cf_order_id={order_id}`;
+
+    const cfRes = await fetch("https://api.cashfree.com/pg/orders", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-version": "2023-08-01",
+        "x-client-id": clientId,
+        "x-client-secret": clientSecret,
+      },
+      body: JSON.stringify({
+        order_id: orderId,
+        order_amount: FIXED_COMPONENT_PRICE,
+        order_currency: "INR",
+        customer_details: {
+          customer_id: `guest_${guestId.slice(0, 20)}`,
+          customer_email: "guest@uivault.app",
+          customer_phone: "9999999999",
+          customer_name: "uiVault User",
+        },
+        order_meta: {
+          return_url: returnUrl,
+        },
+      }),
+    });
+
+    const cfData = await cfRes.json();
+    if (!cfRes.ok || !cfData.payment_session_id) {
+      return res.status(400).json({
+        error: "Failed to create Cashfree order",
+        details: cfData,
+      });
+    }
+
+    await dbQuery(
+      `
+      INSERT INTO component_payments
+      (order_id, component_id, guest_id, amount, status)
+      VALUES (?, ?, ?, ?, 'created')
+      `,
+      [orderId, componentId, guestId, FIXED_COMPONENT_PRICE]
+    );
+
+    res.json({
+      orderId,
+      paymentSessionId: cfData.payment_session_id,
+      amount: FIXED_COMPONENT_PRICE,
+    });
+  } catch (err) {
+    res.status(500).json({ error: "Server error creating order" });
+  }
+});
+
+router.post("/public/cashfree-webhook", async (req, res) => {
+  try {
+    await ensurePaymentTables();
+    if (!verifyCashfreeWebhookSignature(req)) {
+      return res.status(401).json({ error: "Invalid signature" });
+    }
+
+    const data = req.body?.data || {};
+    const orderId =
+      data.order?.order_id || req.body?.order?.order_id || req.body?.order_id;
+    const paymentStatus =
+      data.payment?.payment_status ||
+      req.body?.payment?.payment_status ||
+      req.body?.payment_status;
+    const cfPaymentId =
+      data.payment?.cf_payment_id ||
+      req.body?.payment?.cf_payment_id ||
+      req.body?.cf_payment_id ||
+      null;
+
+    if (!orderId) return res.status(200).json({ received: true });
+
+    const rows = await dbQuery(
+      "SELECT * FROM component_payments WHERE order_id = ? LIMIT 1",
+      [orderId]
+    );
+    if (!rows.length) return res.status(200).json({ received: true });
+
+    const isPaid = String(paymentStatus || "").toUpperCase() === "SUCCESS";
+    const nextStatus = isPaid ? "paid" : "failed";
+
+    await dbQuery(
+      `
+      UPDATE component_payments
+      SET status = ?, cf_payment_id = COALESCE(?, cf_payment_id)
+      WHERE order_id = ?
+      `,
+      [nextStatus, cfPaymentId, orderId]
+    );
+
+    if (isPaid) {
+      await createUnlockForPayment(rows[0]);
+    }
+
+    res.status(200).json({ received: true });
+  } catch (err) {
+    res.status(500).json({ error: "Webhook processing failed" });
+  }
+});
+
+router.get("/public/payment-status/:orderId", async (req, res) => {
+  try {
+    await ensurePaymentTables();
+    const guestId = getOrCreateGuestId(req, res);
+    const { orderId } = req.params;
+    const { componentId } = req.query;
+
+    const rows = await dbQuery(
+      `
+      SELECT * FROM component_payments
+      WHERE order_id = ? AND guest_id = ?
+      LIMIT 1
+      `,
+      [orderId, guestId]
+    );
+    if (!rows.length) return res.status(404).json({ error: "Order not found" });
+
+    const payment = rows[0];
+    if (
+      String(payment.status).toLowerCase() === "paid" &&
+      String(payment.component_id) === String(componentId || payment.component_id)
+    ) {
+      await createUnlockForPayment(payment);
+    }
+
+    const unlockRows = await dbQuery(
+      `
+      SELECT unlock_until
+      FROM component_unlocks
+      WHERE component_id = ? AND guest_id = ? AND unlock_until > NOW()
+      LIMIT 1
+      `,
+      [payment.component_id, guestId]
+    );
+
+    res.json({
+      status: payment.status,
+      componentId: payment.component_id,
+      unlocked: unlockRows.length > 0,
+      unlockUntil: unlockRows[0]?.unlock_until || null,
+    });
+  } catch (err) {
+    res.status(500).json({ error: "Could not fetch payment status" });
+  }
+});
+
 router.put("/components/:id", (req, res) => {
-  if (!req.session.admin)
-    return res.status(401).json({ error: "Unauthorized" });
+  if (!req.session.admin) return res.status(401).json({ error: "Unauthorized" });
 
-  const { name, price, html, css, js } = req.body;
-
+  const { name, html, css, js } = req.body;
   const q = `
     UPDATE components
     SET name=?, price=?, html_code=?, css_code=?, js_code=?
     WHERE id=?
   `;
 
-  db.query(q, [name, price, html, css, js || "", req.params.id], (err) => {
+  db.query(q, [name, FIXED_COMPONENT_PRICE, html, css, js || "", req.params.id], (err) => {
     if (err) return res.status(500).json({ error: "DB error" });
     res.json({ success: true });
   });
 });
 
-// DELETE COMPONENT
 router.delete("/components/:id", (req, res) => {
-  if (!req.session.admin)
-    return res.status(401).json({ error: "Unauthorized" });
+  if (!req.session.admin) return res.status(401).json({ error: "Unauthorized" });
 
   db.query("DELETE FROM components WHERE id=?", [req.params.id], (err) => {
     if (err) return res.status(500).json({ error: "DB error" });
@@ -142,5 +464,4 @@ router.delete("/components/:id", (req, res) => {
   });
 });
 
-//ye sabse niche hi rhna chahiye
 module.exports = router;

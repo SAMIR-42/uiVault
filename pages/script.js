@@ -3,6 +3,10 @@
 ======================= */
 let ALL_COMPONENTS = [];
 let currentCategory = "All";
+const CODE_CACHE = new Map();
+const CARD_REGISTRY = new Map();
+
+const cashfree = window.Cashfree ? window.Cashfree({ mode: "production" }) : null;
 
 /* =======================
    HELPERS
@@ -21,6 +25,7 @@ fetch("/admin/public/components")
   .then((components) => {
     ALL_COMPONENTS = components;
     renderComponents(components); // default = ALL
+    autoHandleReturnFromPayment();
   })
   .catch((err) => {
     console.error("Component load error:", err);
@@ -31,6 +36,7 @@ fetch("/admin/public/components")
 ======================= */
 function renderComponents(list) {
   grid.innerHTML = "";
+  CARD_REGISTRY.clear();
 
   if (list.length === 0) {
     grid.innerHTML = `
@@ -108,7 +114,7 @@ function renderComponents(list) {
 
         <div class="component-footer">
           <span class="component-price">₹${comp.price}</span>
-          <button class="unlock-btn">View Code</button>
+          <button class="unlock-btn">${Number(comp.is_unlocked) ? "Open Code" : "Unlock Code"}</button>
         </div>
       </div>
 
@@ -141,11 +147,30 @@ function renderComponents(list) {
     const tabs = card.querySelectorAll(".tab");
     const codeBlock = card.querySelector(".code-block code");
     const copyBtn = card.querySelector(".copy-btn");
+    const componentId = comp.id;
 
-    codeBlock.innerHTML = escapeHTML(comp.html_code || "");
+    CODE_CACHE.set(componentId, null);
+    CARD_REGISTRY.set(componentId, {
+      comp,
+      card,
+      codePanel,
+      codeBlock,
+      tabs,
+      copyBtn,
+      unlockBtn,
+    });
 
-    unlockBtn.addEventListener("click", () => {
-      codePanel.classList.remove("hidden");
+    if (Number(comp.is_unlocked)) {
+      unlockBtn.textContent = "Open Code";
+    }
+
+    unlockBtn.addEventListener("click", async () => {
+      if (Number(comp.is_unlocked)) {
+        await openCodePanel(componentId);
+        return;
+      }
+
+      await startCheckout(componentId);
     });
 
     tabs.forEach((tab) => {
@@ -154,11 +179,10 @@ function renderComponents(list) {
         tab.classList.add("active");
 
         const type = tab.dataset.tab;
-        if (type === "html")
-          codeBlock.innerHTML = escapeHTML(comp.html_code || "");
-        if (type === "css")
-          codeBlock.innerHTML = escapeHTML(comp.css_code || "");
-        if (type === "js") codeBlock.innerHTML = escapeHTML(comp.js_code || "");
+        const code = CODE_CACHE.get(componentId) || {};
+        if (type === "html") codeBlock.innerHTML = escapeHTML(code.html_code || "");
+        if (type === "css") codeBlock.innerHTML = escapeHTML(code.css_code || "");
+        if (type === "js") codeBlock.innerHTML = escapeHTML(code.js_code || "");
       });
     });
 
@@ -168,10 +192,11 @@ function renderComponents(list) {
 
       let text = "";
       const type = activeTab.dataset.tab;
+      const code = CODE_CACHE.get(componentId) || {};
 
-      if (type === "html") text = comp.html_code || "";
-      if (type === "css") text = comp.css_code || "";
-      if (type === "js") text = comp.js_code || "";
+      if (type === "html") text = code.html_code || "";
+      if (type === "css") text = code.css_code || "";
+      if (type === "js") text = code.js_code || "";
 
       navigator.clipboard.writeText(text).then(() => {
         copyBtn.innerHTML = `<i data-lucide="check"></i>`;
@@ -189,18 +214,106 @@ function renderComponents(list) {
   });
 }
 
-/* =======================
-   CATEGORY FILTER (READY)
-======================= */
-function setCategory(category) {
-  currentCategory = category;
+async function fetchComponentCode(componentId) {
+  const existing = CODE_CACHE.get(componentId);
+  if (existing) return existing;
 
-  if (category === "All") {
-    renderComponents(ALL_COMPONENTS);
-  } else {
-    const filtered = ALL_COMPONENTS.filter((c) => c.category === category);
-    renderComponents(filtered);
+  const res = await fetch(`/admin/public/components/${componentId}/code`);
+  if (!res.ok) {
+    throw new Error("Code locked");
   }
+
+  const data = await res.json();
+  CODE_CACHE.set(componentId, data);
+  return data;
+}
+
+async function openCodePanel(componentId) {
+  const cardData = CARD_REGISTRY.get(componentId);
+  if (!cardData) return;
+
+  const { codePanel, codeBlock, tabs, comp, unlockBtn } = cardData;
+  const data = await fetchComponentCode(componentId);
+
+  comp.is_unlocked = 1;
+  unlockBtn.textContent = "Open Code";
+  codePanel.classList.remove("hidden");
+
+  const activeTab = [...tabs].find((t) => t.classList.contains("active"));
+  const type = activeTab?.dataset.tab || "html";
+  if (type === "html") codeBlock.innerHTML = escapeHTML(data.html_code || "");
+  if (type === "css") codeBlock.innerHTML = escapeHTML(data.css_code || "");
+  if (type === "js") codeBlock.innerHTML = escapeHTML(data.js_code || "");
+}
+
+async function startCheckout(componentId) {
+  if (!cashfree) {
+    alert("Payment SDK not loaded. Please refresh.");
+    return;
+  }
+
+  const cardData = CARD_REGISTRY.get(componentId);
+  if (!cardData) return;
+  cardData.unlockBtn.disabled = true;
+  cardData.unlockBtn.textContent = "Opening...";
+
+  try {
+    const orderRes = await fetch("/admin/public/create-order", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ componentId }),
+    });
+    const orderData = await orderRes.json();
+    if (!orderRes.ok) {
+      throw new Error(orderData.error || "Order creation failed");
+    }
+
+    const checkoutOptions = {
+      paymentSessionId: orderData.paymentSessionId,
+      redirectTarget: "_self",
+    };
+    await cashfree.checkout(checkoutOptions);
+  } catch (err) {
+    alert("Payment start failed. Try again.");
+  } finally {
+    cardData.unlockBtn.disabled = false;
+    cardData.unlockBtn.textContent = "Unlock Code";
+  }
+}
+
+async function autoHandleReturnFromPayment() {
+  const params = new URLSearchParams(window.location.search);
+  const orderId = params.get("cf_order_id");
+  const componentId = params.get("componentId");
+  if (!orderId || !componentId) return;
+
+  const maxAttempts = 10;
+  for (let i = 0; i < maxAttempts; i += 1) {
+    const res = await fetch(
+      `/admin/public/payment-status/${encodeURIComponent(orderId)}?componentId=${encodeURIComponent(componentId)}`
+    );
+    if (res.ok) {
+      const data = await res.json();
+      if (String(data.status).toLowerCase() === "paid" && data.unlocked) {
+        const compRef = ALL_COMPONENTS.find((c) => String(c.id) === String(componentId));
+        if (compRef) compRef.is_unlocked = 1;
+        await openCodePanel(Number(componentId));
+        cleanupPaymentQueryParams();
+        return;
+      }
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+  }
+
+  cleanupPaymentQueryParams();
+}
+
+function cleanupPaymentQueryParams() {
+  const url = new URL(window.location.href);
+  url.searchParams.delete("cf_order_id");
+  url.searchParams.delete("componentId");
+  window.history.replaceState({}, "", url.toString());
 }
 
 /* =======================
