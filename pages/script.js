@@ -6,6 +6,10 @@ let currentCategory = "All";
 const CODE_CACHE = new Map();
 const CARD_REGISTRY = new Map();
 let previewObserver = null;
+const previewLoadQueue = [];
+let activePreviewLoads = 0;
+const MAX_ACTIVE_PREVIEW_LOADS = 1;
+const MIN_LOADER_VISIBLE_MS = 320;
 
 const cashfree = window.Cashfree ? window.Cashfree({ mode: "production" }) : null;
 
@@ -106,13 +110,14 @@ function renderComponents(list) {
     //loader code
     const iframe = card.querySelector("iframe");
     const loader = card.querySelector(".preview-loader");
+    loader.style.display = "flex";
 
     iframe.addEventListener("load", () => {
-      loader.style.display = "none";
+      completePreviewLoad(iframe, loader, true);
     });
 
     iframe.addEventListener("error", () => {
-      loader.style.display = "none";
+      completePreviewLoad(iframe, loader, false);
     });
 
     const unlockBtn = card.querySelector(".unlock-btn");
@@ -190,6 +195,9 @@ function renderComponents(list) {
 }
 
 function setupPreviewLazyLoader() {
+  previewLoadQueue.length = 0;
+  activePreviewLoads = 0;
+
   if (!previewObserver) {
     previewObserver = new IntersectionObserver(
       (entries) => {
@@ -197,17 +205,18 @@ function setupPreviewLazyLoader() {
           if (!entry.isIntersecting) return;
           const iframe = entry.target;
           const src = iframe.dataset.previewUrl;
-          if (src && !iframe.dataset.loaded) {
-            iframe.src = src;
-            iframe.dataset.loaded = "1";
+          if (src && !iframe.dataset.queued && !iframe.dataset.loaded) {
+            iframe.dataset.queued = "1";
+            previewLoadQueue.push(iframe);
+            processPreviewLoadQueue();
           }
           previewObserver.unobserve(iframe);
         });
       },
       {
         root: null,
-        rootMargin: "300px 0px",
-        threshold: 0.01,
+        rootMargin: "0px 0px",
+        threshold: 0.25,
       }
     );
   }
@@ -217,6 +226,40 @@ function setupPreviewLazyLoader() {
       previewObserver.observe(iframe);
     }
   });
+}
+
+function processPreviewLoadQueue() {
+  while (
+    activePreviewLoads < MAX_ACTIVE_PREVIEW_LOADS &&
+    previewLoadQueue.length > 0
+  ) {
+    const iframe = previewLoadQueue.shift();
+    if (!iframe || iframe.dataset.loaded) continue;
+
+    const src = iframe.dataset.previewUrl;
+    if (!src) continue;
+
+    activePreviewLoads += 1;
+    iframe.dataset.loadStartedAt = String(Date.now());
+    iframe.src = src;
+  }
+}
+
+function completePreviewLoad(iframe, loader, didLoad) {
+  if (iframe.dataset.completed === "1") return;
+  iframe.dataset.completed = "1";
+  iframe.dataset.loaded = didLoad ? "1" : "";
+
+  const startedAt = Number(iframe.dataset.loadStartedAt || Date.now());
+  const elapsed = Date.now() - startedAt;
+  const wait = Math.max(0, MIN_LOADER_VISIBLE_MS - elapsed);
+
+  setTimeout(() => {
+    loader.style.display = "none";
+    if (didLoad) iframe.classList.add("ready");
+    activePreviewLoads = Math.max(0, activePreviewLoads - 1);
+    processPreviewLoadQueue();
+  }, wait);
 }
 
 async function fetchComponentCode(componentId) {
