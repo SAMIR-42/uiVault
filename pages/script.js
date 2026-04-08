@@ -263,9 +263,20 @@ async function startCheckout(componentId) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ componentId }),
     });
-    const orderData = await orderRes.json();
+    const orderData = await orderRes.json().catch(() => ({}));
     if (!orderRes.ok) {
-      throw new Error(orderData.error || "Order creation failed");
+      const details =
+        orderData.details?.message ||
+        orderData.details?.reason ||
+        orderData.details?.error_description ||
+        orderData.details?.error ||
+        orderData.details ||
+        "";
+      throw new Error(
+        [orderData.error || "Order creation failed", details]
+          .filter(Boolean)
+          .join(" | ")
+      );
     }
 
     const checkoutOptions = {
@@ -274,7 +285,8 @@ async function startCheckout(componentId) {
     };
     await cashfree.checkout(checkoutOptions);
   } catch (err) {
-    alert("Payment start failed. Try again.");
+    console.error("Payment start error:", err);
+    alert(`Payment start failed: ${err.message || "Try again."}`);
   } finally {
     cardData.unlockBtn.disabled = false;
     cardData.unlockBtn.textContent = "Unlock Code";

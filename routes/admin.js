@@ -61,6 +61,27 @@ function verifyCashfreeWebhookSignature(req) {
   );
 }
 
+async function fetchCashfreeOrderPayments(orderId) {
+  const clientId = process.env.CASHFREE_CLIENT_ID;
+  const clientSecret = process.env.CASHFREE_CLIENT_SECRET;
+  if (!clientId || !clientSecret) return [];
+
+  const url = `https://api.cashfree.com/pg/orders/${encodeURIComponent(orderId)}/payments`;
+  const cfRes = await fetch(url, {
+    method: "GET",
+    headers: {
+      "x-api-version": "2023-08-01",
+      "x-client-id": clientId,
+      "x-client-secret": clientSecret,
+      Accept: "application/json",
+    },
+  });
+
+  if (!cfRes.ok) return [];
+  const data = await cfRes.json();
+  return Array.isArray(data) ? data : [];
+}
+
 async function ensurePaymentTables() {
   await dbQuery(`
     CREATE TABLE IF NOT EXISTS component_payments (
@@ -270,14 +291,14 @@ router.post("/public/create-order", async (req, res) => {
     await ensurePaymentTables();
     const guestId = getOrCreateGuestId(req, res);
     const { componentId } = req.body || {};
-
-    if (!componentId) {
+    const numericComponentId = Number(componentId);
+    if (!numericComponentId || Number.isNaN(numericComponentId)) {
       return res.status(400).json({ error: "componentId is required" });
     }
 
     const componentRows = await dbQuery(
       "SELECT id FROM components WHERE id = ? LIMIT 1",
-      [componentId]
+      [numericComponentId]
     );
     if (!componentRows.length) {
       return res.status(404).json({ error: "Component not found" });
@@ -289,8 +310,8 @@ router.post("/public/create-order", async (req, res) => {
       return res.status(500).json({ error: "Cashfree keys missing" });
     }
 
-    const orderId = `uiv_${componentId}_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-    const returnUrl = `${getBaseUrl(req)}/?componentId=${componentId}&cf_order_id={order_id}`;
+    const orderId = `uiv_${numericComponentId}_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+    const returnUrl = `${getBaseUrl(req)}/?componentId=${numericComponentId}&cf_order_id={order_id}`;
 
     const cfRes = await fetch("https://api.cashfree.com/pg/orders", {
       method: "POST",
@@ -306,8 +327,8 @@ router.post("/public/create-order", async (req, res) => {
         order_currency: "INR",
         customer_details: {
           customer_id: `guest_${guestId.slice(0, 20)}`,
-          customer_email: "guest@uivault.app",
-          customer_phone: "9999999999",
+          customer_email: `guest_${guestId.slice(0, 12)}@example.com`,
+          customer_phone: "9876543210",
           customer_name: "uiVault User",
         },
         order_meta: {
@@ -330,7 +351,7 @@ router.post("/public/create-order", async (req, res) => {
       (order_id, component_id, guest_id, amount, status)
       VALUES (?, ?, ?, ?, 'created')
       `,
-      [orderId, componentId, guestId, FIXED_COMPONENT_PRICE]
+      [orderId, numericComponentId, guestId, FIXED_COMPONENT_PRICE]
     );
 
     res.json({
@@ -339,13 +360,24 @@ router.post("/public/create-order", async (req, res) => {
       amount: FIXED_COMPONENT_PRICE,
     });
   } catch (err) {
-    res.status(500).json({ error: "Server error creating order" });
+    res.status(500).json({ error: "Server error creating order", details: err.message });
   }
+});
+
+router.get("/public/cashfree-webhook", (req, res) => {
+  res.status(200).json({ ok: true });
 });
 
 router.post("/public/cashfree-webhook", async (req, res) => {
   try {
     await ensurePaymentTables();
+    const hasWebhookHeaders =
+      req.headers["x-webhook-signature"] && req.headers["x-webhook-timestamp"];
+
+    if (!hasWebhookHeaders) {
+      return res.status(200).json({ received: true, ignored: true });
+    }
+
     if (!verifyCashfreeWebhookSignature(req)) {
       return res.status(401).json({ error: "Invalid signature" });
     }
@@ -411,6 +443,25 @@ router.get("/public/payment-status/:orderId", async (req, res) => {
     if (!rows.length) return res.status(404).json({ error: "Order not found" });
 
     const payment = rows[0];
+    if (String(payment.status).toLowerCase() === "created") {
+      const cfPayments = await fetchCashfreeOrderPayments(orderId);
+      const successPayment = cfPayments.find(
+        (p) => String(p.payment_status || "").toUpperCase() === "SUCCESS"
+      );
+
+      if (successPayment) {
+        await dbQuery(
+          `
+          UPDATE component_payments
+          SET status = 'paid', cf_payment_id = COALESCE(?, cf_payment_id)
+          WHERE order_id = ?
+          `,
+          [successPayment.cf_payment_id || null, orderId]
+        );
+        payment.status = "paid";
+      }
+    }
+
     if (
       String(payment.status).toLowerCase() === "paid" &&
       String(payment.component_id) === String(componentId || payment.component_id)
