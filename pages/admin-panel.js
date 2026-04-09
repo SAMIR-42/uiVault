@@ -14,7 +14,7 @@ document.getElementById("myCompsBtn").onclick = () => {
 
 document.getElementById("logoutBtn").addEventListener("click", async () => {
   await fetch("/admin/logout");
-  window.location.href = "/pages/admin-login.html";
+  window.location.href = "index.html";
 });
 //fetch categories
 async function loadCategories() {
