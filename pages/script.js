@@ -107,7 +107,7 @@ function renderNextBatch() {
 
         <div class="component-footer">
           <span class="component-price">₹${comp.price}</span>
-          <button class="unlock-btn">${Number(comp.is_unlocked) ? "Open Code" : "Unlock Code"}</button>
+          <button class="unlock-btn">${Number(comp.price) === 0 || Number(comp.is_unlocked) ? "Open Code" : "Unlock Code"}</button>
         </div>
       </div>
 
@@ -163,12 +163,12 @@ function renderNextBatch() {
       unlockBtn,
     });
 
-    if (Number(comp.is_unlocked)) {
+    if (Number(comp.price) === 0 || Number(comp.is_unlocked)) {
       unlockBtn.textContent = "Open Code";
     }
 
     unlockBtn.addEventListener("click", async () => {
-      if (Number(comp.is_unlocked)) {
+      if (Number(comp.price) === 0 || Number(comp.is_unlocked)) {
         await openCodePanel(componentId);
         return;
       }

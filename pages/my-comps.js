@@ -11,6 +11,12 @@
 
 let components = [];
 let activeId = null;
+let renderSource = [];
+let renderedCount = 0;
+let listLoading = false;
+let loadMoreObserver = null;
+const BATCH_SIZE = 10;
+const MIN_LOADER_VISIBLE_MS = 220;
 
 const grid = document.getElementById("componentGrid");
 
@@ -32,7 +38,7 @@ const cancelDelete = document.getElementById("cancelDelete");
 const logoutBtn = document.getElementById("logoutBtn");
 
 // FETCH COMPONENTS (SESSION INCLUDED)
-fetch("/admin/public/components", {
+fetch("/admin/components", {
   credentials: "include",
 })
   .then((r) => r.json())
@@ -44,41 +50,45 @@ fetch("/admin/public/components", {
 // RENDER
 function render() {
   grid.innerHTML = "";
+  renderSource = components;
+  renderedCount = 0;
+  listLoading = false;
 
-  components.forEach((comp) => {
+  if (loadMoreObserver) {
+    loadMoreObserver.disconnect();
+    loadMoreObserver = null;
+  }
+
+  renderNextBatch();
+  setupLoadMoreObserver();
+}
+
+function renderNextBatch() {
+  if (listLoading) return;
+  if (renderedCount >= renderSource.length) return;
+  listLoading = true;
+
+  const end = Math.min(renderedCount + BATCH_SIZE, renderSource.length);
+  for (let i = renderedCount; i < end; i += 1) {
+    const comp = renderSource[i];
     const card = document.createElement("div");
     card.className = "component-card";
-
-    const iframeHTML = `
-<!DOCTYPE html>
-<html>
-<head>
-<script src="https://cdn.tailwindcss.com"></script>
-<style>
-html,body{width: 100%;height: 100%;margin:0;padding:0}
-*{box-sizing:border-box}
-body {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-${comp.css_code || ""}
-</style>
-</head>
-<body>
-${comp.html_code || ""}
-<script>${comp.js_code || ""}<\/script>
-</body>
-</html>
-`;
 
     card.innerHTML = `
       <div class="preview-box">
         <iframe
           class="component-preview"
           sandbox="allow-scripts"
-          srcdoc="${iframeHTML.replace(/"/g, "&quot;")}">
+          loading="lazy"
+          src="/admin/public/components/${comp.id}/preview">
         </iframe>
+        <div class="preview-loader">
+          <div class="line-loader">
+            <span></span>
+            <span></span>
+            <span></span>
+          </div>
+        </div>
       </div>
 
       <div class="component-body">
@@ -93,12 +103,57 @@ ${comp.html_code || ""}
       </div>
     `;
 
+    const iframe = card.querySelector(".component-preview");
+    const loader = card.querySelector(".preview-loader");
+    const loadStart = Date.now();
+
+    iframe.addEventListener("load", () => {
+      const elapsed = Date.now() - loadStart;
+      const wait = Math.max(0, MIN_LOADER_VISIBLE_MS - elapsed);
+      setTimeout(() => {
+        loader.style.display = "none";
+      }, wait);
+    });
+
+    iframe.addEventListener("error", () => {
+      loader.innerHTML = `<div class="preview-placeholder">Preview unavailable</div>`;
+    });
+
     card.querySelector(".edit").onclick = () => openEdit(comp);
     card.querySelector(".delete").onclick = () => openDelete(comp.id);
 
     grid.appendChild(card);
-  });
+  }
+  renderedCount = end;
+  listLoading = false;
+}
 
+function setupLoadMoreObserver() {
+  const sentinel = document.createElement("div");
+  sentinel.id = "adminLoadSentinel";
+  sentinel.style.height = "1px";
+  grid.appendChild(sentinel);
+
+  loadMoreObserver = new IntersectionObserver(
+    (entries) => {
+      if (!entries[0]?.isIntersecting) return;
+      if (renderedCount >= renderSource.length) return;
+
+      renderNextBatch();
+      grid.appendChild(sentinel);
+    },
+    {
+      root: null,
+      rootMargin: "200px 0px",
+      threshold: 0,
+    }
+  );
+
+  loadMoreObserver.observe(sentinel);
+}
+
+function rerenderAfterMutation() {
+  render();
   lucide.createIcons();
 }
 
@@ -134,7 +189,19 @@ saveEdit.onclick = async () => {
     return;
   }
 
-  location.reload();
+  const idx = components.findIndex((c) => c.id === activeId);
+  if (idx !== -1) {
+    components[idx] = {
+      ...components[idx],
+      name: editName.value,
+      price: Number(editPrice.value),
+      html_code: editHTML.value,
+      css_code: editCSS.value,
+      js_code: editJS.value,
+    };
+  }
+  editModal.classList.add("hidden");
+  rerenderAfterMutation();
 };
 
 closeEdit.onclick = () => {
@@ -158,7 +225,9 @@ confirmDelete.onclick = async () => {
     return;
   }
 
-  location.reload();
+  components = components.filter((c) => c.id !== activeId);
+  deleteModal.classList.add("hidden");
+  rerenderAfterMutation();
 };
 
 cancelDelete.onclick = () => {

@@ -6,7 +6,6 @@ const db = require("../db");
 const router = express.Router();
 console.log("admin routes file loaded");
 
-const FIXED_COMPONENT_PRICE = 1;
 const UNLOCK_DURATION_HOURS = 1;
 
 function dbQuery(query, params = []) {
@@ -202,9 +201,10 @@ router.post("/components", (req, res) => {
     return res.status(401).json({ error: "Unauthorized" });
   }
 
-  const { name, category_id, html, css, js } = req.body;
+  const { name, category_id, price, html, css, js } = req.body;
+  const parsedPrice = Number(price);
 
-  if (!name || !category_id || !html || !css) {
+  if (!name || !category_id || !html || !css || Number.isNaN(parsedPrice) || parsedPrice < 0) {
     return res.status(400).json({ error: "Missing required fields" });
   }
 
@@ -215,7 +215,7 @@ router.post("/components", (req, res) => {
   `;
   db.query(
     query,
-    [name, category_id, FIXED_COMPONENT_PRICE, html, css, js || ""],
+    [name, category_id, parsedPrice, html, css, js || ""],
     (err) => {
       if (err) {
         return res.status(500).json({ error: "DB insert failed" });
@@ -235,9 +235,10 @@ router.get("/public/components", async (req, res) => {
       SELECT
         c.id,
         c.name,
-        ? AS price,
+        c.price,
         cat.name AS category,
         CASE
+          WHEN c.price = 0 THEN 1
           WHEN u.unlock_until IS NOT NULL AND u.unlock_until > NOW() THEN 1
           ELSE 0
         END AS is_unlocked
@@ -249,7 +250,27 @@ router.get("/public/components", async (req, res) => {
       ORDER BY c.created_at DESC
     `;
 
-    const results = await dbQuery(query, [FIXED_COMPONENT_PRICE, guestId]);
+    const results = await dbQuery(query, [guestId]);
+    res.json(results);
+  } catch (err) {
+    res.status(500).json({ error: "DB error" });
+  }
+});
+
+router.get("/components", async (req, res) => {
+  if (!req.session.admin) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  try {
+    const query = `
+      SELECT c.id, c.name, c.price, cat.name AS category,
+             c.html_code, c.css_code, c.js_code
+      FROM components c
+      JOIN categories cat ON c.category_id = cat.id
+      ORDER BY c.created_at DESC
+    `;
+    const results = await dbQuery(query);
     res.json(results);
   } catch (err) {
     res.status(500).json({ error: "DB error" });
@@ -260,6 +281,38 @@ router.get("/public/components/:id/code", async (req, res) => {
   try {
     await ensurePaymentTables();
     const guestId = getOrCreateGuestId(req, res);
+
+    const componentRows = await dbQuery(
+      `
+      SELECT price
+      FROM components
+      WHERE id = ?
+      LIMIT 1
+      `,
+      [req.params.id]
+    );
+    if (!componentRows.length) {
+      return res.status(404).json({ error: "Component not found" });
+    }
+
+    const componentPrice = Number(componentRows[0].price || 0);
+    if (componentPrice <= 0) {
+      const codeRowsFree = await dbQuery(
+        `
+        SELECT html_code, css_code, js_code
+        FROM components
+        WHERE id = ?
+        LIMIT 1
+        `,
+        [req.params.id]
+      );
+      return res.json({
+        html_code: codeRowsFree[0].html_code || "",
+        css_code: codeRowsFree[0].css_code || "",
+        js_code: codeRowsFree[0].js_code || "",
+        unlock_until: null,
+      });
+    }
 
     const unlockRows = await dbQuery(
       `
@@ -371,11 +424,15 @@ router.post("/public/create-order", async (req, res) => {
     }
 
     const componentRows = await dbQuery(
-      "SELECT id FROM components WHERE id = ? LIMIT 1",
+      "SELECT id, price FROM components WHERE id = ? LIMIT 1",
       [numericComponentId]
     );
     if (!componentRows.length) {
       return res.status(404).json({ error: "Component not found" });
+    }
+    const componentPrice = Number(componentRows[0].price || 0);
+    if (componentPrice <= 0) {
+      return res.status(400).json({ error: "Free component does not need payment" });
     }
 
     const { clientId, clientSecret } = getCashfreeCredentials();
@@ -396,7 +453,7 @@ router.post("/public/create-order", async (req, res) => {
       },
       body: JSON.stringify({
         order_id: orderId,
-        order_amount: FIXED_COMPONENT_PRICE,
+        order_amount: componentPrice,
         order_currency: "INR",
         customer_details: {
           customer_id: `guest_${guestId.slice(0, 20)}`,
@@ -424,13 +481,13 @@ router.post("/public/create-order", async (req, res) => {
       (order_id, component_id, guest_id, amount, status)
       VALUES (?, ?, ?, ?, 'created')
       `,
-      [orderId, numericComponentId, guestId, FIXED_COMPONENT_PRICE]
+      [orderId, numericComponentId, guestId, componentPrice]
     );
 
     res.json({
       orderId,
       paymentSessionId: cfData.payment_session_id,
-      amount: FIXED_COMPONENT_PRICE,
+      amount: componentPrice,
     });
   } catch (err) {
     res.status(500).json({ error: "Server error creating order", details: err.message });
@@ -566,14 +623,19 @@ router.get("/public/payment-status/:orderId", async (req, res) => {
 router.put("/components/:id", (req, res) => {
   if (!req.session.admin) return res.status(401).json({ error: "Unauthorized" });
 
-  const { name, html, css, js } = req.body;
+  const { name, price, html, css, js } = req.body;
+  const parsedPrice = Number(price);
+  if (!name || !html || !css || Number.isNaN(parsedPrice) || parsedPrice < 0) {
+    return res.status(400).json({ error: "Invalid component payload" });
+  }
+
   const q = `
     UPDATE components
     SET name=?, price=?, html_code=?, css_code=?, js_code=?
     WHERE id=?
   `;
 
-  db.query(q, [name, FIXED_COMPONENT_PRICE, html, css, js || "", req.params.id], (err) => {
+  db.query(q, [name, parsedPrice, html, css, js || "", req.params.id], (err) => {
     if (err) return res.status(500).json({ error: "DB error" });
     res.json({ success: true });
   });
