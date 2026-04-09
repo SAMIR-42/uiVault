@@ -28,6 +28,11 @@ body {
   line-height: 1.6;
 }
 
+html, body {
+  -webkit-overflow-scrolling: touch;
+}
+
+
 /* =========================
      Utilities
      ========================= */
@@ -188,6 +193,12 @@ body {
   flex-direction: column;
 }
 
+
+.component-card {
+  /* will-change: transform; */
+  transform: translateZ(0);
+}
+
 /* Preview */
 
 .preview-box {
@@ -258,6 +269,12 @@ body {
   border: none;
   background: white;
 }
+.component-preview {
+  /* will-change: transform; */
+  transform: translateZ(0);
+  pointer-events: none; /* 🔥 important for smooth scroll */
+}
+
 
 /* =========================
    Locked Code Section
@@ -624,6 +641,9 @@ body {
   justify-content: center;
   z-index: 2;
 }
+.preview-loader{
+  will-change: opacity;
+}
 
 .line-loader {
   display: flex;
@@ -661,6 +681,10 @@ body {
 /* preview box ko relative banana zaruri */
 .preview-box {
   position: relative;
+}
+
+.preview-box {
+  touch-action: pan-y;
 }
 
 

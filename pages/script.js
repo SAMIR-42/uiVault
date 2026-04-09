@@ -9,10 +9,13 @@ let RENDER_SOURCE = [];
 let renderedCount = 0;
 let listLoading = false;
 let loadMoreObserver = null;
-const BATCH_SIZE = 20;
+const BATCH_SIZE = 15;
 const MIN_LOADER_VISIBLE_MS = 250;
 
 const cashfree = window.Cashfree ? window.Cashfree({ mode: "production" }) : null;
+
+
+
 
 /* =======================
    HELPERS
