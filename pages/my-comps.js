@@ -237,5 +237,5 @@ cancelDelete.onclick = () => {
 // LOGOUT
 logoutBtn.onclick = async () => {
   await fetch("/admin/logout", { credentials: "include" });
-  location.href = "/pages/admin-login.html";
+  location.href = "index.html";
 };
