@@ -9,7 +9,7 @@ let RENDER_SOURCE = [];
 let renderedCount = 0;
 let listLoading = false;
 let loadMoreObserver = null;
-const BATCH_SIZE = 10;
+const BATCH_SIZE = 20;
 const MIN_LOADER_VISIBLE_MS = 250;
 
 const cashfree = window.Cashfree ? window.Cashfree({ mode: "production" }) : null;
@@ -67,7 +67,8 @@ function renderComponents(list) {
   }
 
   renderNextBatch();
-  setupLoadMoreObserver();
+  createLoadMoreUI();
+  // setupLoadMoreObserver();
 }
 
 function renderNextBatch() {
@@ -218,6 +219,33 @@ function renderNextBatch() {
   renderedCount = end;
   listLoading = false;
 }
+
+//new fun ak bari me sirf 20 comp dikhayenge
+
+function createLoadMoreUI() {
+  // already exist remove
+  const old = document.getElementById("loadMoreWrap");
+  if (old) old.remove();
+
+  if (renderedCount >= RENDER_SOURCE.length) return;
+
+  const wrap = document.createElement("div");
+  wrap.id = "loadMoreWrap";
+
+  wrap.innerHTML = `
+    <div class="load-more-blur"></div>
+    <button class="load-more-btn">Explore More</button>
+  `;
+
+  grid.parentElement.appendChild(wrap);
+
+  wrap.querySelector("button").onclick = () => {
+    renderNextBatch();
+    createLoadMoreUI(); // update again
+  };
+}
+
+
 
 function setupLoadMoreObserver() {
   const sentinel = document.createElement("div");

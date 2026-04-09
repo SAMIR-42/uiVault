@@ -173,9 +173,17 @@ function setupLoadMoreObserver() {
 }
 
 function rerenderAfterMutation() {
+  const scrollY = window.scrollY; // 👈 save position
+
   render();
+
+  requestAnimationFrame(() => {
+    window.scrollTo({ top: scrollY, behavior: "instant" }); // 👈 restore
+  });
+
   lucide.createIcons();
 }
+
 
 // EDIT
 function openEdit(comp) {
