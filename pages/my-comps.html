@@ -30,7 +30,10 @@
         <h3>Edit Component</h3>
 
         <input id="editName" placeholder="Name" />
-        <input id="editPrice" type="number" placeholder="Price" />
+        <input id="editPrice" type="number" placeholder="Price" min="0" step="1" />
+
+        <label class="modal-label" for="editCategory">Category</label>
+        <select id="editCategory"></select>
 
         <textarea id="editHTML" placeholder="HTML"></textarea>
         <textarea id="editCSS" placeholder="CSS"></textarea>

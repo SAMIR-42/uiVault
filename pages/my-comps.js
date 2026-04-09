@@ -10,6 +10,7 @@
 })();
 
 let components = [];
+let categories = [];
 let activeId = null;
 let renderSource = [];
 let renderedCount = 0;
@@ -26,6 +27,7 @@ const deleteModal = document.getElementById("deleteModal");
 
 const editName = document.getElementById("editName");
 const editPrice = document.getElementById("editPrice");
+const editCategory = document.getElementById("editCategory");
 const editHTML = document.getElementById("editHTML");
 const editCSS = document.getElementById("editCSS");
 const editJS = document.getElementById("editJS");
@@ -37,15 +39,33 @@ const confirmDelete = document.getElementById("confirmDelete");
 const cancelDelete = document.getElementById("cancelDelete");
 const logoutBtn = document.getElementById("logoutBtn");
 
-// FETCH COMPONENTS (SESSION INCLUDED)
-fetch("/admin/components", {
-  credentials: "include",
-})
-  .then((r) => r.json())
-  .then((data) => {
-    components = data;
-    render();
-  });
+function fillCategorySelect() {
+  if (!editCategory || editCategory.dataset.filled === "1") return;
+  editCategory.innerHTML = categories
+    .map((c) => `<option value="${c.id}">${c.name}</option>`)
+    .join("");
+  editCategory.dataset.filled = "1";
+}
+
+(async function initMyComps() {
+  try {
+    const r = await fetch("/admin/components", { credentials: "include" });
+    if (r.ok) components = await r.json();
+  } catch (_) {
+    /* keep empty */
+  }
+  try {
+    const r = await fetch("/admin/categories", { credentials: "include" });
+    if (r.ok) {
+      const cats = await r.json();
+      if (Array.isArray(cats)) categories = cats;
+    }
+  } catch (_) {
+    /* categories optional for list; edit needs them */
+  }
+  fillCategorySelect();
+  render();
+})();
 
 // RENDER
 function render() {
@@ -160,9 +180,11 @@ function rerenderAfterMutation() {
 // EDIT
 function openEdit(comp) {
   activeId = comp.id;
+  fillCategorySelect();
 
   editName.value = comp.name;
   editPrice.value = comp.price;
+  editCategory.value = String(comp.category_id || "");
   editHTML.value = comp.html_code;
   editCSS.value = comp.css_code;
   editJS.value = comp.js_code || "";
@@ -178,6 +200,7 @@ saveEdit.onclick = async () => {
     body: JSON.stringify({
       name: editName.value,
       price: editPrice.value,
+      category_id: editCategory.value,
       html: editHTML.value,
       css: editCSS.value,
       js: editJS.value,
@@ -190,11 +213,16 @@ saveEdit.onclick = async () => {
   }
 
   const idx = components.findIndex((c) => c.id === activeId);
+  const selectedCat = categories.find(
+    (c) => String(c.id) === String(editCategory.value)
+  );
   if (idx !== -1) {
     components[idx] = {
       ...components[idx],
       name: editName.value,
       price: Number(editPrice.value),
+      category_id: Number(editCategory.value),
+      category: selectedCat ? selectedCat.name : components[idx].category,
       html_code: editHTML.value,
       css_code: editCSS.value,
       js_code: editJS.value,
