@@ -264,7 +264,7 @@ router.get("/components", async (req, res) => {
 
   try {
     const query = `
-      SELECT c.id, c.name, c.price, cat.name AS category,
+      SELECT c.id, c.name, c.price, c.category_id, cat.name AS category,
              c.html_code, c.css_code, c.js_code
       FROM components c
       JOIN categories cat ON c.category_id = cat.id
@@ -623,22 +623,35 @@ router.get("/public/payment-status/:orderId", async (req, res) => {
 router.put("/components/:id", (req, res) => {
   if (!req.session.admin) return res.status(401).json({ error: "Unauthorized" });
 
-  const { name, price, html, css, js } = req.body;
+  const { name, price, category_id, html, css, js } = req.body;
   const parsedPrice = Number(price);
-  if (!name || !html || !css || Number.isNaN(parsedPrice) || parsedPrice < 0) {
+  const parsedCategoryId = Number(category_id);
+  if (
+    !name ||
+    !html ||
+    !css ||
+    Number.isNaN(parsedPrice) ||
+    parsedPrice < 0 ||
+    Number.isNaN(parsedCategoryId) ||
+    parsedCategoryId < 1
+  ) {
     return res.status(400).json({ error: "Invalid component payload" });
   }
 
   const q = `
     UPDATE components
-    SET name=?, price=?, html_code=?, css_code=?, js_code=?
+    SET name=?, price=?, category_id=?, html_code=?, css_code=?, js_code=?
     WHERE id=?
   `;
 
-  db.query(q, [name, parsedPrice, html, css, js || "", req.params.id], (err) => {
-    if (err) return res.status(500).json({ error: "DB error" });
-    res.json({ success: true });
-  });
+  db.query(
+    q,
+    [name, parsedPrice, parsedCategoryId, html, css, js || "", req.params.id],
+    (err) => {
+      if (err) return res.status(500).json({ error: "DB error" });
+      res.json({ success: true });
+    }
+  );
 });
 
 router.delete("/components/:id", (req, res) => {
