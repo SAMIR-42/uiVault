@@ -64,7 +64,9 @@ return;
 }
 
 renderNextBatch();
-setupLoadMoreObserver();
+createLoadMoreUI();
+
+// setupLoadMoreObserver();
 }
 
 function renderNextBatch() {
@@ -463,3 +465,28 @@ const filtered = ALL_COMPONENTS.filter((c) => c.category === category);
 renderComponents(filtered);
 }
 }
+
+
+function createLoadMoreUI() {
+  // already exist remove
+  const old = document.getElementById("loadMoreWrap");
+  if (old) old.remove();
+
+  if (renderedCount >= RENDER_SOURCE.length) return;
+
+  const wrap = document.createElement("div");
+  wrap.id = "loadMoreWrap";
+
+  wrap.innerHTML = `
+    <div class="load-more-blur"></div>
+    <button class="load-more-btn">Explore More</button>
+  `;
+
+  grid.parentElement.appendChild(wrap);
+
+  wrap.querySelector("button").onclick = () => {
+    renderNextBatch();
+    createLoadMoreUI(); // update again
+  };
+}
+
