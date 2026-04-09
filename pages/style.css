@@ -27,6 +27,10 @@ body {
   color: var(--text-primary);
   line-height: 1.6;
 }
+body {
+  overscroll-behavior-y: contain;
+}
+
 
 html, body {
   -webkit-overflow-scrolling: touch;
@@ -194,10 +198,7 @@ html, body {
 }
 
 
-.component-card {
-  /* will-change: transform; */
-  transform: translateZ(0);
-}
+
 
 /* Preview */
 
@@ -271,7 +272,7 @@ html, body {
 }
 .component-preview {
   /* will-change: transform; */
-  transform: translateZ(0);
+  /* transform: translateZ(0); */
   pointer-events: none; /* 🔥 important for smooth scroll */
 }
 

@@ -87,12 +87,15 @@ function renderNextBatch() {
 
     card.innerHTML = `
       <div class="preview-box">
-        <iframe
-          class="component-preview"
-          sandbox="allow-scripts"
-          loading="lazy"
-          src="/admin/public/components/${comp.id}/preview"
-        ></iframe>
+      <div class="preview-box" data-src="/admin/public/components/${comp.id}/preview">
+      <div class="preview-loader">
+        <div class="line-loader">
+          <span></span>
+          <span></span>
+          <span></span>
+        </div>
+      </div>
+    </div>
         <div class="preview-loader">
           <div class="line-loader">
               <span></span>
@@ -221,6 +224,9 @@ function renderNextBatch() {
   }
   renderedCount = end;
   listLoading = false;
+  
+  initLazyPreview();
+
 }
 
 //new fun ak bari me sirf 20 comp dikhayenge
@@ -492,4 +498,43 @@ function setCategory(category) {
     const filtered = ALL_COMPONENTS.filter((c) => c.category === category);
     renderComponents(filtered);
   }
+}
+
+function initLazyPreview() {
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      if (!entry.isIntersecting) return;
+
+      const box = entry.target;
+      if (box.dataset.loaded) return;
+
+      const iframe = document.createElement("iframe");
+      iframe.className = "component-preview";
+      iframe.src = box.dataset.src;
+      iframe.sandbox = "allow-scripts";
+
+      const loader = box.querySelector(".preview-loader");
+
+      iframe.onload = () => {
+        if (loader) loader.style.display = "none";
+      };
+
+      iframe.onerror = () => {
+        if (loader) {
+          loader.innerHTML = `<div class="preview-placeholder">Preview unavailable</div>`;
+        }
+      };
+
+      box.appendChild(iframe);
+      box.dataset.loaded = "1";
+
+      observer.unobserve(box);
+    });
+  }, {
+    rootMargin: "200px"
+  });
+
+  document.querySelectorAll(".preview-box").forEach((box) => {
+    observer.observe(box);
+  });
 }
