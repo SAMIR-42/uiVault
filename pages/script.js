@@ -17,9 +17,9 @@ HELPERS
 ======================= */
 function escapeHTML(str = "") {
 return str
-.replace(/&/g, "&")
-.replace(/</g, "<")
-.replace(/>/g, ">");
+.replace(/&/g, "&amp;")
+.replace(/</g, "&lt;")
+.replace(/>/g, "&gt;");
 }
 
 const grid = document.getElementById("componentGrid");
