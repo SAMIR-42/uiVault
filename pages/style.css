@@ -270,12 +270,6 @@ html, body {
   border: none;
   background: white;
 }
-.component-preview {
-  /* will-change: transform; */
-  /* transform: translateZ(0); */
-  pointer-events: none; /* 🔥 important for smooth scroll */
-}
-
 
 /* =========================
    Locked Code Section
