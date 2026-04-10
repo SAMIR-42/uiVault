@@ -1,0 +1,10 @@
+
+User-agent: *
+Allow: /
+
+Sitemap: https://uivault.onrender.com/sitemap.xml
+
+
+
+https://uivault.onrender.com/sitemap.xml
+
