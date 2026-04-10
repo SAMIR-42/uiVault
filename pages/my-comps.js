@@ -37,6 +37,7 @@ const closeEdit = document.getElementById("closeEdit");
 
 const confirmDelete = document.getElementById("confirmDelete");
 const cancelDelete = document.getElementById("cancelDelete");
+const searchInput = document.getElementById("searchInput");
 const logoutBtn = document.getElementById("logoutBtn");
 
 function fillCategorySelect() {
@@ -271,6 +272,43 @@ rerenderAfterMutation();
 cancelDelete.onclick = () => {
 deleteModal.classList.add("hidden");
 };
+
+
+function normalize(str = "") {
+  return str.toLowerCase().replace(/\s+/g, "");
+}
+
+
+searchInput.addEventListener("input", () => {
+  const value = normalize(searchInput.value);
+
+  if (!value) {
+    renderSource = components;
+  } else {
+    renderSource = components.filter((c) =>
+      normalize(c.name).includes(value)
+    );
+  }
+
+  // reset rendering
+  grid.innerHTML = "";
+  renderedCount = 0;
+  listLoading = false;
+
+  if (loadMoreObserver) {
+    loadMoreObserver.disconnect();
+    loadMoreObserver = null;
+  }
+
+  renderNextBatch();
+  setupLoadMoreObserver();
+});
+
+
+if (renderSource.length === 0) {
+  grid.innerHTML = `<p style="text-align:center;">No matching components 😢</p>`;
+  return;
+}
 
 // LOGOUT
 logoutBtn.onclick = async () => {
