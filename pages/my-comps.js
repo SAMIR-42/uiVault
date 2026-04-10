@@ -273,13 +273,12 @@ cancelDelete.onclick = () => {
 deleteModal.classList.add("hidden");
 };
 
-
+//search fun
 function normalize(str = "") {
   return str.toLowerCase().replace(/\s+/g, "");
 }
 
-
-searchInput.addEventListener("input", () => {
+function applySearch() {
   const value = normalize(searchInput.value);
 
   if (!value) {
@@ -290,7 +289,7 @@ searchInput.addEventListener("input", () => {
     );
   }
 
-  // reset rendering
+  // reset properly (same as render())
   grid.innerHTML = "";
   renderedCount = 0;
   listLoading = false;
@@ -300,15 +299,17 @@ searchInput.addEventListener("input", () => {
     loadMoreObserver = null;
   }
 
+  // 👇 empty state handle yahi kar
+  if (renderSource.length === 0) {
+    grid.innerHTML = `<p style="text-align:center;">No matching components 😢</p>`;
+    return;
+  }
+
   renderNextBatch();
   setupLoadMoreObserver();
-});
-
-
-if (renderSource.length === 0) {
-  grid.innerHTML = `<p style="text-align:center;">No matching components 😢</p>`;
-  return;
 }
+
+searchInput.addEventListener("input", applySearch);
 
 // LOGOUT
 logoutBtn.onclick = async () => {
